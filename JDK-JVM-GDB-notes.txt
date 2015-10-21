@@ -1,0 +1,131 @@
+Notes
+-----
+
+When debugging java programs, one has to generally do this:
+
+(gdb) handle SIGSEGV nostop noprint pass
+
+bash ./configure --enable-debug
+make all
+
+$ cat ~/.gdbinit
+set history save
+handle SIGSEGV nostop noprint pass
+
+
+Build OpenJDK
+-------------
+
+http://hg.openjdk.java.net/build-infra/jdk8/raw-file/tip/README-builds.html
+
+bash ./configure --with-debug-level=slowdebug
+make all
+
+JDB
+---
+
+http://www.tutorialspoint.com/jdb/jdb_quick_guide.htm
+
+http://docs.oracle.com/javase/8/docs/technotes/tools/windows/jdb.html
+
+JDB is awesome command-line Java debugger.
+
+...
+
+How to get Java Call Stack of a running application?
+
+Method 1: Use jstack utility from command line (part of JRE distro).
+
+Method 2: Send signal 3 to the java process, it will dump stack traces on stdout.
+
+Method 3: Call Thread.getAllStackTraces () from within application.
+
+
+...
+
+Method 2 above gives us,
+
+Thread: 0x00007eff1c012000  [0x1d07] State: _at_safepoint _has_called_back 0 _at_poll_safepoint 0
+   JavaThread state: _thread_in_native
+	at java.net.PlainSocketImpl.socketAccept(Native Method)
+	at java.net.AbstractPlainSocketImpl.accept(AbstractPlainSocketImpl.java:409)
+	at java.net.ServerSocket.implAccept(ServerSocket.java:546)
+	at java.net.ServerSocket.accept(ServerSocket.java:514)
+	at Main.main(Main.java:20)
+
+JDB
+---
+
+$ jdb -Xbootclasspath/p:jmx_patch.jar -Dcom.sun.management.jmxremote.host=127.0.0.1 -Dcom.sunanagement.jmxremote.port=7091 -Dcom.sun.management.jmxremote.rmi.port=7091 -Dcom.sun.management.jmxremote.authenticate=false -Dcom.sun.management.jmxremote.ssl=false Main
+Initializing jdb ...
+> stop in java.net.ServerSocket.<init>
+Deferring breakpoint java.net.ServerSocket.<init>.
+It will be set after the class is loaded.
+> run
+run Main
+Set uncaught java.lang.Throwable
+Set deferred uncaught java.lang.Throwable
+>
+VM Started: Unable to set deferred breakpoint java.net.ServerSocket.<init> : Method <init> is overloaded; specify arguments
+
+Stopping due to deferred breakpoint errors.
+"thread=main", sun.rmi.transport.proxy.RMIDirectSocketFactory.createServerSocket(), line=44 bci=82
+44                    return new ServerSocket(port, 20, inetAddresses[0]);
+
+main[1] where
+  [1] sun.rmi.transport.proxy.RMIDirectSocketFactory.createServerSocket (RMIDirectSocketFactory.java:44)
+  [2] sun.rmi.transport.proxy.RMIMasterSocketFactory.createServerSocket (RMIMasterSocketFactory.java:345)
+  [3] sun.rmi.transport.tcp.TCPEndpoint.newServerSocket (TCPEndpoint.java:666)
+  [4] sun.rmi.transport.tcp.TCPTransport.listen (TCPTransport.java:330)
+  [5] sun.rmi.transport.tcp.TCPTransport.exportObject (TCPTransport.java:249)
+  [6] sun.rmi.transport.tcp.TCPEndpoint.exportObject (TCPEndpoint.java:411)
+  [7] sun.rmi.transport.LiveRef.exportObject (LiveRef.java:147)
+  [8] sun.rmi.server.UnicastServerRef.exportObject (UnicastServerRef.java:208)
+  [9] sun.management.jmxremote.ConnectorBootstrap$PermanentExporter.exportObject (ConnectorBootstrap.java:191)
+  [10] javax.management.remote.rmi.RMIJRMPServerImpl.export (RMIJRMPServerImpl.java:116)
+  [11] javax.management.remote.rmi.RMIJRMPServerImpl.export (RMIJRMPServerImpl.java:95)
+  [12] javax.management.remote.rmi.RMIConnectorServer.start (RMIConnectorServer.java:404)
+  [13] sun.management.jmxremote.ConnectorBootstrap.exportMBeanServer (ConnectorBootstrap.java:768)
+  [14] sun.management.jmxremote.ConnectorBootstrap.startRemoteConnectorServer (ConnectorBootstrap.java:456)
+  [15] sun.management.Agent.startAgent (Agent.java:257)
+  [16] sun.management.Agent.startAgent (Agent.java:447)
+main[1]
+
+
+GDB
+---
+
+$ gdb --args java -Dcom.sun.management.jmxremote.port=7091 -Dcom.sun.management.jmxremote.rmi.port=7091 -Dcom.sun.management.jmxremote.authenticate=false -Dcom.sun.management.jmxremote.ssl=false Main
+...
+(gdb) handle SIGSEGV nostop noprint pass
+Signal        Stop	Print	Pass to program	Description
+SIGSEGV       No	No	Yes		Segmentation fault
+(gdb) break bind
+Function "bind" not defined.
+Make breakpoint pending on future shared library load? (y or [n]) y
+Breakpoint 1 (bind) pending.
+(gdb) run
+...
+
+Breakpoint 1, bind () at ../sysdeps/unix/syscall-template.S:81
+81	../sysdeps/unix/syscall-template.S: No such file or directory.
+(gdb) bt
+#0  bind () at ../sysdeps/unix/syscall-template.S:81
+#1  0x00007fff9f0d764d in NET_Bind (fd=6, him=0x7ffff7fcbb30, len=28)
+    at /home/luke/jdk9/jdk/src/java.base/unix/native/libnet/net_util_md.c:1584
+#2  0x00007fff9f0d1ea7 in Java_java_net_PlainSocketImpl_socketBind (env=0x7ffff0013220, this=0x7ffff7fcbc00,
+    iaObj=0x7ffff7fcbbf8, localport=7091)
+    at /home/luke/jdk9/jdk/src/java.base/unix/native/libnet/PlainSocketImpl.c:544
+#3  0x00007fffe102f41f in ?? ()
+#4  0x0000000000000008 in ?? ()
+#5  0x00007ffff0013000 in ?? ()
+#6  0x00007fffb5289cc0 in ?? ()
+#7  0x00007fffe102ea29 in ?? ()
+#8  0x00007ffff7fcbb90 in ?? ()
+#9  0x00007fffb5273da0 in ?? ()
+#10 0x00007ffff7fcbc00 in ?? ()
+#11 0x00007fffb527b6f8 in ?? ()
+#12 0x0000000000000000 in ?? ()
+
+jdk/src/java.rmi//share/classes/sun/rmi/transport/proxy/RMIDirectSocketFactory.java
+is used by the JMX code internally!
